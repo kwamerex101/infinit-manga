@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 350" role="img" aria-labelledby="title desc">
+  <title id="title">Four media modes in Infinit Manga</title>
+  <desc id="desc">Manga, novels, comics, and anime have individual libraries and save progress in their respective reader or player.</desc>
+  <rect width="1200" height="350" rx="24" fill="#14121b"/>
+  <g fill="#211b2c" stroke="#48365a" stroke-width="2">
+    <rect x="36" y="40" width="264" height="180" rx="16"/>
+    <rect x="324" y="40" width="264" height="180" rx="16"/>
+    <rect x="612" y="40" width="264" height="180" rx="16"/>
+    <rect x="900" y="40" width="264" height="180" rx="16"/>
+  </g>
+  <g fill="none" stroke="#c4a3fd" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M144 77h48v51h-48z M151 89h14v13h-14z M171 89h14 M171 96h14 M151 114h34"/>
+    <path d="M432 82h12c8 0 12 4 12 9v39c0-5-4-9-12-9h-12z M480 82h-12c-8 0-12 4-12 9v39c0-5 4-9 12-9h12z"/>
+    <path d="M720 80h48v49h-48z M720 101h48 M739 101v28 M725 96l13-11 10 8 14-9 M745 119l8-10 9 9"/>
+    <path d="M1008 83h48v43h-48z M1026 94l15 10-15 10z"/>
+  </g>
+  <g fill="#f8f4ff" font-family="system-ui, -apple-system, sans-serif" font-size="30" font-weight="700" text-anchor="middle">
+    <text x="168" y="179">Manga</text>
+    <text x="456" y="179">Novels</text>
+    <text x="744" y="179">Comics</text>
+    <text x="1032" y="179">Anime</text>
+  </g>
+  <path d="M168 221v29h864v-29 M456 221v29 M744 221v29 M600 250v24" fill="none" stroke="#8563b2" stroke-width="3"/>
+  <rect x="348" y="274" width="504" height="52" rx="26" fill="#302242"/>
+  <text x="600" y="308" fill="#f0e7ff" font-family="system-ui, -apple-system, sans-serif" font-size="25" font-weight="650" text-anchor="middle">Saved libraries and progress on device</text>
+</svg>

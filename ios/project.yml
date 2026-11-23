@@ -1,0 +1,46 @@
+name: Papertrail
+options:
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  SwiftSoup:
+    url: https://github.com/scinfu/SwiftSoup.git
+    exactVersion: 2.9.6
+targets:
+  Papertrail:
+    type: application
+    platform: iOS
+    sources: [Papertrail]
+    info:
+      path: Papertrail/Info.plist
+      properties:
+        BGTaskSchedulerPermittedIdentifiers:
+          - $(PRODUCT_BUNDLE_IDENTIFIER).bookmarked-chapters
+        UIBackgroundModes:
+          - fetch
+        MangaAgentEndpoint: $(MANGA_AGENT_ENDPOINT)
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+    dependencies:
+      - package: SwiftSoup
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.infinitmanga.reader
+        GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: infinit manga
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.books
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        TARGETED_DEVICE_FAMILY: 1
+        SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: Papertrail/Support/ComicArchive.h
+        OTHER_LDFLAGS: "$(inherited) -larchive"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: 82
+schemes:
+  Papertrail:
+    build:
+      targets:
+        Papertrail: all
+    run:
+      config: Debug

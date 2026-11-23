@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151624">
+  <meta name="referrer" content="no-referrer">
+  <title>Papertrail</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="#discover" class="brand"><img src="/favicon.svg" alt="" width="33" height="33">Papertrail</a>
+      <nav aria-label="Main navigation">
+        <a href="#discover" data-nav="discover">Discover</a>
+        <a href="#library" data-nav="library">Library</a>
+      </nav>
+      <form id="search-form" role="search">
+        <label class="sr-only" for="search-input">Search manga or paste a RoliaScan link</label>
+        <input id="search-input" type="search" placeholder="Find a manga…" maxlength="350" required>
+        <button class="icon search-button" type="submit" aria-label="Search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/></svg>
+        </button>
+      </form>
+    </div>
+  </header>
+  <main id="main" tabindex="-1"></main>
+  <div id="notice" class="notice" role="status"></div>
+</body>
+</html>
