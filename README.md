@@ -30,7 +30,9 @@ Bookmarks, reading lists, and progress are stored on the device. Browsing and pl
 
 The deployment target is iOS 17. The project file is checked in. If you edit [`ios/project.yml`](ios/project.yml), regenerate it with `cd ios && xcodegen generate`.
 
-The Manga Agent uses catalog search through MangaDex by default in the public build. To use a relay you operate, set the `MANGA_AGENT_ENDPOINT` build setting to its HTTPS URL.
+The Manga Agent uses MangaDex catalog search by default. To use your own AI relay, open the gear menu in Manga Agent and enter its full HTTPS endpoint and an API key if your relay requires one. The app stores both in the device’s Keychain. Clear both fields and save to return to MangaDex catalog search. If you previously set `MANGA_AGENT_ENDPOINT` when building the app, enter that URL in the gear menu.
+
+The relay must accept a JSON POST with a `messages` array of `role` and `content` objects and return a JSON object with an `answer` string and a `mangaDexIDs` array. The array can be empty. The app sends the optional key as an Authorization bearer token. To use a model provider’s API, connect it through a relay that implements this format.
 
 ## Run the web reader
 

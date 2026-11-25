@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 struct AgentTitle: Identifiable {
     let manga: Manga
@@ -60,6 +61,87 @@ struct AgentCatalogQuery {
         if let language { items.append(.init(name: "originalLanguage[]", value: language)) }
         items.append(.init(name: title == nil ? "order[followedCount]" : "order[relevance]", value: "desc"))
         return items
+    }
+}
+
+struct MangaAgentRelay: Codable {
+    let endpoint: URL
+    let apiKey: String?
+
+    private static let record: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "dev.infinitmanga.reader.manga-agent",
+        kSecAttrAccount as String: "relay"
+    ]
+
+    enum Failure: LocalizedError {
+        case invalidEndpoint, invalidKey, storage
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidEndpoint: "Enter a valid HTTPS relay URL."
+            case .invalidKey: "Enter the API key without spaces or line breaks."
+            case .storage: "Couldn’t access the Manga Agent settings in Keychain."
+            }
+        }
+    }
+
+    init?(endpoint: String, apiKey: String) throws {
+        let address = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if address.isEmpty && key.isEmpty { return nil }
+        guard address.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+              let url = SourceHTTP.url(address), let host = url.host, !host.isEmpty,
+              url.fragment == nil else {
+            throw Failure.invalidEndpoint
+        }
+        guard key.utf8.allSatisfy({ (33...126).contains($0) }) else {
+            throw Failure.invalidKey
+        }
+        self.endpoint = url
+        self.apiKey = key.isEmpty ? nil : key
+    }
+
+    static func load() throws -> Self? {
+        var query = record
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data,
+              let relay = try? JSONDecoder().decode(Self.self, from: data) else {
+            throw Failure.storage
+        }
+        return relay
+    }
+
+    static func save(_ relay: Self?) throws {
+        guard let relay else {
+            let status = SecItemDelete(record as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw Failure.storage
+            }
+            return
+        }
+        let attributes = [kSecValueData as String: try JSONEncoder().encode(relay)]
+        var status = SecItemUpdate(record as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = record
+            item[kSecValueData as String] = attributes[kSecValueData as String]
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw Failure.storage }
+    }
+}
+
+private final class MangaAgentRelayDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }
 
@@ -128,16 +210,14 @@ final class MangaAgent {
     }
 
     private func answer(_ question: String, history: [Turn]) async throws -> AgentReply {
-        let endpoint = (Bundle.main.object(forInfoDictionaryKey: "MangaAgentEndpoint") as? String)
-            .flatMap { SourceHTTP.url($0) }
-        var messages = history.flatMap { turn in
-            [AgentMessage(role: .user, content: turn.question),
-             AgentMessage(role: .assistant, content: turn.reply?.answer ?? "")]
-        }
-        messages.append(AgentMessage(role: .user, content: question))
-        if let endpoint {
+        if let relay = try? MangaAgentRelay.load() {
+            var messages = history.flatMap { turn in
+                [AgentMessage(role: .user, content: turn.question),
+                 AgentMessage(role: .assistant, content: turn.reply?.answer ?? "")]
+            }
+            messages.append(AgentMessage(role: .user, content: question))
             do {
-                return try await serverAnswer(endpoint, messages: messages)
+                return try await serverAnswer(relay, messages: messages)
             } catch {
                 try Task.checkCancellation()
             }
@@ -175,18 +255,21 @@ final class MangaAgent {
         return AgentReply(answer: answer, titles: titles, query: query)
     }
 
-    private func serverAnswer(_ endpoint: URL, messages: [AgentMessage]) async throws -> AgentReply {
+    private func serverAnswer(_ relay: MangaAgentRelay, messages: [AgentMessage]) async throws -> AgentReply {
         struct Payload: Encodable { let messages: [AgentMessage] }
         struct Response: Decodable { let answer: String; let mangaDexIDs: [String] }
 
-        var request = URLRequest(url: endpoint, timeoutInterval: 10)
+        var request = URLRequest(url: relay.endpoint, timeoutInterval: 10)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let apiKey = relay.apiKey {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
         request.httpBody = try JSONEncoder().encode(Payload(messages: messages))
-        let (data, response) = try await SourceHTTP.session.data(for: request)
+        let (data, response) = try await SourceHTTP.session.data(for: request, delegate: MangaAgentRelayDelegate())
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              http.url == endpoint else {
+              http.url == relay.endpoint else {
             throw SourceFailure.unavailable
         }
         let reply = try JSONDecoder().decode(Response.self, from: data)

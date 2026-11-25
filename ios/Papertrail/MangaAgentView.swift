@@ -6,6 +6,7 @@ struct MangaAgentView: View {
     @State private var draft = ""
     @State private var composerHeight: CGFloat = 62
     @State private var confirmingClearChat = false
+    @State private var showingRelaySettings = false
     @FocusState private var composing: Bool
 
     private let suggestions = [
@@ -48,6 +49,12 @@ struct MangaAgentView: View {
             }
         }
         .background(Color.papertrailBackground)
+        .sheet(isPresented: $showingRelaySettings) {
+            MangaAgentRelaySettings {
+                composing = false
+                agent.reset()
+            }
+        }
         .alert("Clear this chat?", isPresented: $confirmingClearChat) {
             Button("Cancel", role: .cancel) {}
             Button("Clear Chat", role: .destructive) {
@@ -78,6 +85,15 @@ struct MangaAgentView: View {
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
+            Button {
+                showingRelaySettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Manga Agent settings")
             Button {
                 confirmingClearChat = true
             } label: {
@@ -260,5 +276,70 @@ struct MangaAgentView: View {
         composing = false
         ShelfHaptics.tap.play()
         agent.ask(String(text.prefix(600)), readingHistory: library.recent.map(\.manga))
+    }
+}
+
+private struct MangaAgentRelaySettings: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var endpoint = ""
+    @State private var apiKey = ""
+    @State private var loaded = false
+    @State private var errorMessage: String?
+
+    let onSave: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("HTTPS relay URL", text: $endpoint)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("API key (optional)", text: $apiKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } footer: {
+                    Text("Chat messages are sent to the relay you enter. Leave both fields blank to use MangaDex catalog search. Saving resets the current chat.")
+                }
+                if let errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                }
+            }
+            .navigationTitle("Manga Agent Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: save)
+                        .disabled(!loaded)
+                }
+            }
+            .task {
+                guard !loaded else { return }
+                do {
+                    let relay = try MangaAgentRelay.load()
+                    endpoint = relay?.endpoint.absoluteString ?? ""
+                    apiKey = relay?.apiKey ?? ""
+                    loaded = true
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func save() {
+        do {
+            let relay = try MangaAgentRelay(endpoint: endpoint, apiKey: apiKey)
+            try MangaAgentRelay.save(relay)
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

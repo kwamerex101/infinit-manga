@@ -18,7 +18,6 @@ targets:
           - $(PRODUCT_BUNDLE_IDENTIFIER).bookmarked-chapters
         UIBackgroundModes:
           - fetch
-        MangaAgentEndpoint: $(MANGA_AGENT_ENDPOINT)
         UILaunchScreen:
           UIColorName: LaunchBackground
     dependencies:
