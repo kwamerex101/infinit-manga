@@ -142,12 +142,14 @@ final class ReadingStore {
 
     var sourceURLs: [URL] { state.sourceURLs ?? [] }
 
-    var enabledSources: [ReadingSource] {
+    var catalogSources: [ReadingSource] {
         let addedSources = Set(sourceURLs.compactMap(ReadingSource.match))
-        return ReadingSource.allCases.filter { $0 != .comix && addedSources.contains($0) }
+        return ReadingSource.allCases.filter { addedSources.contains($0) }
     }
 
-    var hasComix: Bool { sourceURLs.contains { InAppWebsite.comix.contains($0) } }
+    var enabledSources: [ReadingSource] { catalogSources.filter { $0 != .comix } }
+
+    var hasComix: Bool { catalogSources.contains(.comix) }
 
     @discardableResult
     func addSource(_ source: ReadingSource) -> SourceAddition {
