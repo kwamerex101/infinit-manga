@@ -100,6 +100,7 @@ struct ShelfView: View {
     @State private var pageFailures: [ReadingSource: SourceLoadFailure] = [:]
     @State private var filter: ReadingSource?
     @State private var comixPage: ComixPage?
+    @State private var pendingComixChapter: Chapter?
     @State private var librarySection = LibrarySection.saved
     @State private var savedUpdates = SavedChapterUpdates()
     @State private var loadingUpdates = false
@@ -158,8 +159,13 @@ struct ShelfView: View {
         NavigationStack(path: $path) {
             appShell
             .toolbar(.hidden, for: .navigationBar)
-            .fullScreenCover(item: $comixPage) { page in
-                InAppWebsiteBrowser(site: .comix, url: page.url)
+            .fullScreenCover(item: $comixPage, onDismiss: {
+                if let chapter = pendingComixChapter {
+                    pendingComixChapter = nil
+                    path.append(chapter)
+                }
+            }) { page in
+                InAppWebsiteBrowser(site: .comix, url: page.url) { pendingComixChapter = $0 }
             }
             .onChange(of: tab) { previous, current in
                 if current == .search {
@@ -618,7 +624,11 @@ struct ShelfView: View {
         if let url = SourceHTTP.url(term), InAppWebsite.comix.contains(url) {
             clearSearchResults()
             query = ""
-            comixPage = ComixPage(url: url)
+            if let chapter = Comix.chapterLink(url) {
+                path.append(chapter)
+            } else {
+                comixPage = ComixPage(url: url)
+            }
             if feedback { ShelfHaptics.tap.play() }
             return
         }

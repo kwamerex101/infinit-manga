@@ -208,7 +208,8 @@ struct CoverView: View {
 
 struct PageArtwork: View {
     let chapter: Chapter
-    let url: URL
+    let url: URL?
+    let deferredPages: DeferredChapterPages?
     let page: Int
     let scrolling: Bool
     let quality: ReaderImageQuality
@@ -222,7 +223,7 @@ struct PageArtwork: View {
     @State private var aspectRatio: CGFloat?
 
     private struct LoadRequest: Equatable {
-        let url: URL
+        let url: URL?
         let quality: ReaderImageQuality
         let attempt: Int
         let active: Bool
@@ -283,16 +284,21 @@ struct PageArtwork: View {
             do {
                 let isDex = chapter.provider == .mangaDex
                 let loaded: UIImage
-                if attempt > 0 {
+                if let deferredPages {
+                    let pageURL = try await deferredPages.resolve(page)
+                    loaded = try await Artwork.image(at: pageURL, quality: quality)
+                } else if let url, attempt > 0 {
                     let refreshed = try await chapter.provider.refreshedPage(chapter, index: page, original: url, quality: quality)
                     loaded = try await Artwork.image(at: refreshed, quality: quality, mangaDexPage: isDex, referer: chapter.provider.pageReferer)
-                } else {
+                } else if let url {
                     do {
                         loaded = try await Artwork.image(at: url, quality: quality, mangaDexPage: isDex, referer: chapter.provider.pageReferer)
                     } catch where isDex && !Task.isCancelled && SourceLoadFailure(error) != .offline {
                         let refreshed = try await chapter.provider.refreshedPage(chapter, index: page, original: url, quality: quality)
                         loaded = try await Artwork.image(at: refreshed, quality: quality, mangaDexPage: true)
                     }
+                } else {
+                    throw SourceFailure.noPages
                 }
                 try Task.checkCancellation()
                 if aspectRatio == nil { aspectRatio = loaded.size.width / loaded.size.height }

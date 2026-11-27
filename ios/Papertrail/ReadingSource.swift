@@ -1,7 +1,7 @@
 import Foundation
 
 enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
-    case roliaScan, mangaDex, mangaKatana, asuraScans, webtoon, manhuaPlus, vortexScans, brainRotComics, dynastyReader, mangapill
+    case roliaScan, mangaDex, mangaKatana, asuraScans, webtoon, manhuaPlus, vortexScans, brainRotComics, dynastyReader, mangapill, comix
 
     var id: Self { self }
 
@@ -25,6 +25,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
         case .brainRotComics: "BrainRotComics"
         case .dynastyReader: "Dynasty Reader"
         case .mangapill: "Mangapill"
+        case .comix: "Comix"
         }
     }
 
@@ -40,6 +41,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
         case .brainRotComics: URL(string: "https://brainrotcomics.com")!
         case .dynastyReader: DynastyReader.website
         case .mangapill: Mangapill.website
+        case .comix: InAppWebsite.comixURL
         }
     }
 
@@ -55,6 +57,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
         case .brainRotComics: ["brainrotcomics.com", "www.brainrotcomics.com"]
         case .dynastyReader: ["dynasty-scans.com", "www.dynasty-scans.com"]
         case .mangapill: ["mangapill.com", "www.mangapill.com"]
+        case .comix: ["comix.to", "www.comix.to"]
         }
     }
 
@@ -88,6 +91,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
         case .manhuaPlus, .vortexScans, .brainRotComics: mangaWebsite.seriesURL(slug)
         case .dynastyReader: DynastyReader.seriesURL(slug)
         case .mangapill: Mangapill.seriesURL(slug)
+        case .comix: Comix.seriesURL(slug)
         }
     }
 
@@ -101,6 +105,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
         case .manhuaPlus, .vortexScans, .brainRotComics: mangaWebsite.seriesLink(url)
         case .dynastyReader: DynastyReader.seriesLink(url)
         case .mangapill: Mangapill.seriesLink(url)
+        case .comix: Comix.seriesSlug(url)
         }
     }
 
@@ -114,6 +119,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
         case .manhuaPlus, .vortexScans, .brainRotComics: mangaWebsite.chapterLink(url)
         case .dynastyReader: DynastyReader.chapterLink(url)
         case .mangapill: Mangapill.chapterLink(url)
+        case .comix: Comix.chapterLink(url)
         }
     }
 
@@ -129,6 +135,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
             case .manhuaPlus, .vortexScans, .brainRotComics: try await mangaWebsite.catalog(page: page)
             case .dynastyReader: try await DynastyReader.catalog(page: page)
             case .mangapill: try await Mangapill.catalog()
+            case .comix: throw SourceFailure.unavailable
             }
         }
     }
@@ -144,6 +151,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
             case .manhuaPlus, .vortexScans, .brainRotComics: try await mangaWebsite.search(query)
             case .dynastyReader: try await DynastyReader.search(query)
             case .mangapill: try await Mangapill.search(query)
+            case .comix: throw SourceFailure.unavailable
             }
         }
     }
@@ -159,6 +167,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
             case .manhuaPlus, .vortexScans, .brainRotComics: try await mangaWebsite.series(slug)
             case .dynastyReader: try await DynastyReader.series(slug)
             case .mangapill: try await Mangapill.series(slug)
+            case .comix: throw SourceFailure.unavailable
             }
         }
     }
@@ -177,12 +186,13 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
             case .manhuaPlus, .vortexScans, .brainRotComics: mangaWebsite.chapters(series, offset: offset, ascending: ascending)
             case .dynastyReader: DynastyReader.chapters(series, offset: offset, ascending: ascending)
             case .mangapill: Mangapill.chapters(series, offset: offset, ascending: ascending)
+            case .comix: throw SourceFailure.unavailable
             }
         }
     }
 
     func content(_ chapter: Chapter) async throws -> ChapterContent {
-        try await SourceMemory.chapters.value(for: .init(source: self, id: chapter.source.absoluteString)) {
+        let load: @Sendable () async throws -> ChapterContent = {
             switch self {
             case .roliaScan: try await RoliaScan.live.content(chapter)
             case .mangaDex: try await MangaDex.content(chapter)
@@ -192,8 +202,12 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
             case .manhuaPlus, .vortexScans, .brainRotComics: try await mangaWebsite.content(chapter)
             case .dynastyReader: try await DynastyReader.content(chapter)
             case .mangapill: try await Mangapill.content(chapter)
+            case .comix: try await Comix.content(chapter)
             }
         }
+        // Comix keeps a page renderer alive only while the reader holds this chapter.
+        if self == .comix { return try await load() }
+        return try await SourceMemory.chapters.value(for: .init(source: self, id: chapter.source.absoluteString), load: load)
     }
 
     func chaptersForAlerts(_ manga: Manga) async throws -> ChapterList {
@@ -218,6 +232,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
         case .mangapill:
             let series = try await Mangapill.series(manga.slug)
             return Mangapill.chapters(series, offset: 0, ascending: false)
+        case .comix: throw SourceFailure.unavailable
         case .dynastyReader:
             let series = try await DynastyReader.series(manga.slug)
             return DynastyReader.chapters(series, offset: 0, ascending: false)
@@ -235,6 +250,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
         case .manhuaPlus, .vortexScans, .brainRotComics: pages = try await mangaWebsite.pages(chapter)
         case .dynastyReader: pages = try await DynastyReader.pages(chapter)
         case .mangapill: pages = try await Mangapill.pages(chapter)
+        case .comix: return original
         }
         guard pages.indices.contains(index) else { throw SourceFailure.noPages }
         return pages[index]

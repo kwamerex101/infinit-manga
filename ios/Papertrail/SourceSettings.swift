@@ -428,7 +428,7 @@ struct SourceSettings: View {
     private func add(_ source: SourcePicker.Option) {
         let result = switch source {
         case .native(let provider): library.addSource(provider)
-        case .comix: library.addComixSource()
+        case .comix: library.addSource(.comix)
         }
         switch result {
         case .added:
@@ -488,7 +488,7 @@ private struct SourcePicker: View {
     }
 
     private var suggestions: [Option] {
-        let options = ReadingSource.allCases.map(Option.native) + [.comix]
+        let options = ReadingSource.allCases.filter { $0 != .comix }.map(Option.native) + [.comix]
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !search.isEmpty else { return options }
         let key = search.filter { $0.isLetter || $0.isNumber }

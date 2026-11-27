@@ -56,6 +56,7 @@
 		DDCADBD8BD89FB6D1A2B233C /* LoadingSkeleton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40E3ED5DBC61F834EB95AD99 /* LoadingSkeleton.swift */; };
 		E4A90A61172158F418D7A433 /* RemoteArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744D1967B959D7C8F458DFA8 /* RemoteArt.swift */; };
 		E7157F50C25DC952F5D91D1E /* SourceWebPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5507903314067CEF51DC4A6 /* SourceWebPage.swift */; };
+		4F45A51308732D08B540403A /* Comix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0998EC87AA327642D6301CED /* Comix.swift */; };
 		E96CC9442769E34B8E4C57BD /* ShelfPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 275534B46FD1785F2A20FED7 /* ShelfPresentation.swift */; };
 		EB7ACAC9FBA66D0EBE28B3D4 /* LaunchIntro.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F4B5AF16083C47E382A6D67 /* LaunchIntro.swift */; };
 		EF663FD4E880CAD45C88F8B4 /* WebsiteSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94C73232EA23932B62D3F0FF /* WebsiteSources.swift */; };
@@ -118,6 +119,7 @@
 		E783740603FBAC2475B18073 /* ReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderScreen.swift; sourceTree = "<group>"; };
 		F239949373CF232CCA822C03 /* XOXOComics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XOXOComics.swift; sourceTree = "<group>"; };
 		F5507903314067CEF51DC4A6 /* SourceWebPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceWebPage.swift; sourceTree = "<group>"; };
+		0998EC87AA327642D6301CED /* Comix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Comix.swift; sourceTree = "<group>"; };
 		F6E8965602A248015B2312F6 /* Webtoon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Webtoon.swift; sourceTree = "<group>"; };
 		FFD7640B5C74D64A9E849E64 /* ChapterPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterPicker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -188,6 +190,7 @@
 				D38E33F1E10C46F10C22CDBE /* SourceMemoryCache.swift */,
 				AD86C1461DF021E5EB0DF408 /* SourceSettings.swift */,
 				F5507903314067CEF51DC4A6 /* SourceWebPage.swift */,
+				0998EC87AA327642D6301CED /* Comix.swift */,
 				94C73232EA23932B62D3F0FF /* WebsiteSources.swift */,
 				F6E8965602A248015B2312F6 /* Webtoon.swift */,
 				F239949373CF232CCA822C03 /* XOXOComics.swift */,
@@ -341,6 +344,7 @@
 				A14A17DCCA0932B43588507D /* SourceMemoryCache.swift in Sources */,
 				7A2B8BD6A6CACA22AC2E0280 /* SourceSettings.swift in Sources */,
 				E7157F50C25DC952F5D91D1E /* SourceWebPage.swift in Sources */,
+				4F45A51308732D08B540403A /* Comix.swift in Sources */,
 				EF663FD4E880CAD45C88F8B4 /* WebsiteSources.swift in Sources */,
 				AAC98FF384EFE7807241D121 /* Webtoon.swift in Sources */,
 				84C46C43AD6DDA27E14859B6 /* XOXOComics.swift in Sources */,

@@ -103,10 +103,19 @@ struct ChapterContent: Sendable {
     let previous: Chapter?
     let next: Chapter?
     var optimizedPages: [URL]? = nil
+    var deferredPages: DeferredChapterPages? = nil
+
+    var pageCount: Int { deferredPages?.count ?? pages.count }
 
     func pages(for quality: ReaderImageQuality) -> [URL] {
         quality == .optimized ? optimizedPages ?? pages : pages
     }
+}
+
+struct DeferredChapterPages: Sendable {
+    let count: Int
+    let webPage: SourceWebPage
+    let resolve: @Sendable (Int) async throws -> URL
 }
 
 struct RoliaScan {

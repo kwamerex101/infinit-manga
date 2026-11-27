@@ -94,6 +94,7 @@ struct InAppWebsiteBrowser: View {
     @Environment(\.dismiss) private var dismiss
     let website: InAppWebsite
     let url: URL
+    private let openNativeChapter: ((Chapter) -> Void)?
 
     @State private var session: InAppWebsiteBrowserSession
     @State private var attempt = 0
@@ -102,9 +103,10 @@ struct InAppWebsiteBrowser: View {
         self.init(site: .anime(website), url: url)
     }
 
-    init(site website: InAppWebsite, url: URL) {
+    init(site website: InAppWebsite, url: URL, openNativeChapter: ((Chapter) -> Void)? = nil) {
         self.website = website
         self.url = url
+        self.openNativeChapter = openNativeChapter
         _session = State(initialValue: InAppWebsiteBrowserSession(site: website))
     }
 
@@ -122,6 +124,16 @@ struct InAppWebsiteBrowser: View {
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier(website.browserID + "-domain")
                 Spacer(minLength: 0)
+                if let openNativeChapter, let chapter = session.currentURL.flatMap(Comix.chapterLink) {
+                    Button("Read in app", systemImage: "book") {
+                        openNativeChapter(chapter)
+                        session.close()
+                        dismiss()
+                    }
+                    .labelStyle(.iconOnly)
+                    .frame(width: 44, height: 44)
+                    .accessibilityIdentifier("comix-native-reader")
+                }
                 Button("Reload", systemImage: "arrow.clockwise") {
                     if session.webView == nil { attempt += 1 }
                     else { session.reload() }
@@ -184,6 +196,7 @@ struct InAppWebsiteContent: UIViewRepresentable {
 @Observable
 final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate {
     private(set) var webView: WKWebView?
+    private(set) var currentURL: URL?
     private(set) var loading = true
     private(set) var canGoBack = false
     private(set) var failure: String?
@@ -191,6 +204,7 @@ final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDele
 
     private let website: InAppWebsite
     private let focusedPlayback: Bool
+    @ObservationIgnored private var urlObservation: NSKeyValueObservation?
 
     init(site: InAppWebsite, focusedPlayback: Bool = false) {
         website = site
@@ -241,6 +255,15 @@ final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDele
                 view.scrollView.isScrollEnabled = false
             }
             webView = view
+            if case .comix = website {
+                urlObservation = view.observe(\.url, options: [.new]) { [weak self] view, _ in
+                    Task { @MainActor [weak self, weak view] in
+                        guard let self, let view, webView === view else { return }
+                        currentURL = view.url
+                        canGoBack = view.canGoBack
+                    }
+                }
+            }
             view.load(URLRequest(url: url, timeoutInterval: 30))
             if focusedPlayback { try await waitForPlayer(in: view) }
         } catch {
@@ -358,10 +381,13 @@ final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDele
     """#
 
     func close() {
+        urlObservation?.invalidate()
+        urlObservation = nil
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
         webView?.stopLoading()
         webView = nil
+        currentURL = nil
         canGoBack = false
         loading = false
         playbackReady = false
@@ -408,11 +434,13 @@ final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDele
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }
 
     func webView(_ view: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        currentURL = nil
         loading = true
         failure = nil
     }
 
     func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) {
+        currentURL = view.url
         loading = false
         canGoBack = view.canGoBack
     }
@@ -444,7 +472,7 @@ final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDele
 }
 
 @MainActor
-private enum InAppWebsiteRules {
+enum InAppWebsiteRules {
     private static let adHosts = [
         "createlouisville.org", "tagivi.com",
         "doubleclick.net", "googlesyndication.com", "googleadservices.com",
