@@ -38,6 +38,7 @@ struct ReaderScreen: View {
     @State private var caption: ControlCaption?
     @State private var showsChapters = false
     @State private var hasSidebarWidth = false
+    @State private var comixFallback: URL?
 
     private var hasRoomForSidebar: Bool { hasSidebarWidth && verticalSizeClass != .compact }
 
@@ -60,6 +61,20 @@ struct ReaderScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.papertrailInk)
+        .background {
+            if let deferred = current?.content.deferredPages {
+                // Keep a viewport so the source document can load the requested page.
+                InAppWebsiteContent(webView: deferred.webPage.webView)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { comixFallback != nil },
+            set: { if !$0 { comixFallback = nil } }
+        )) {
+            if let url = comixFallback { InAppWebsiteBrowser(site: .comix, url: url) }
+        }
         .safeAreaInset(edge: .leading, spacing: 0) {
             if hasRoomForSidebar, showsChapters, let current {
                 chapterPicker(current.content, in: book)
@@ -113,12 +128,10 @@ struct ReaderScreen: View {
                     ShelfStateView(failure: failure, title: "Chapter unavailable",
                                    message: "Couldn’t load this chapter from \(chapter.provider.name).",
                                    action: .init("Retry") { reload += 1 })
-                    Link(destination: chapter.source) {
-                        Label("Open on \(chapter.provider.name)", systemImage: "arrow.up.right")
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 12)
-                            .frame(minHeight: 44)
-                    }
+                    openOnSource(chapter)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
                 }
                 .padding(16)
                 .frame(minHeight: viewport.size.height)
@@ -274,10 +287,21 @@ struct ReaderScreen: View {
             library.setRead(!read, chapter: content.chapter)
             (read ? ShelfHaptics.selection : .success).play()
         }
-        MangaSaveButton(manga: content.manga, placement: .inline)
-        MangaSaveButton(manga: content.manga, kind: .readLater, placement: .inline)
-        Link(destination: content.chapter.source) {
-            Label("Open on \(content.chapter.provider.name)", systemImage: "arrow.up.right")
+        if content.chapter.provider != .comix {
+            MangaSaveButton(manga: content.manga, placement: .inline)
+            MangaSaveButton(manga: content.manga, kind: .readLater, placement: .inline)
+        }
+        openOnSource(content.chapter)
+    }
+
+    @ViewBuilder
+    private func openOnSource(_ chapter: Chapter) -> some View {
+        if chapter.provider == .comix {
+            Button("Open on Comix", systemImage: "arrow.up.right") { comixFallback = chapter.source }
+        } else {
+            Link(destination: chapter.source) {
+                Label("Open on \(chapter.provider.name)", systemImage: "arrow.up.right")
+            }
         }
     }
 
@@ -291,7 +315,8 @@ struct ReaderScreen: View {
     private func prefetch(_ pages: [ReadingBook.Page], after page: Int, quality: ReaderImageQuality) async {
         for entry in pages.dropFirst(page + 1).prefix(quality == .highResolution ? 1 : 2) {
             guard !Task.isCancelled else { return }
-            _ = try? await Artwork.image(at: entry.url, quality: quality,
+            guard let url = entry.url else { continue }
+            _ = try? await Artwork.image(at: url, quality: quality,
                                           mangaDexPage: entry.chapter.provider == .mangaDex,
                                           referer: entry.chapter.provider.pageReferer, prefetch: true)
         }
@@ -311,7 +336,7 @@ struct ReaderScreen: View {
         do {
             let loaded = try await requested.provider.content(requested)
             try Task.checkCancellation()
-            page = min(max(0, library.progress(loaded.chapter).page), loaded.pages.count - 1)
+            page = min(max(0, library.progress(loaded.chapter).page), loaded.pageCount - 1)
             chapters = [loaded]
             library.record(loaded.chapter, manga: loaded.manga, page: page)
         } catch {
@@ -380,16 +405,18 @@ struct ReaderScreen: View {
         ToolbarItem(placement: .bottomBar) {
             pageStep("chevron.right", forward: true, groups: groups, group: group)
         }
-        ToolbarItem(placement: .bottomBar) {
-            Button {
-                setChaptersVisible(!showsChapters)
-                ShelfHaptics.selection.play()
-            } label: {
-                Image(systemName: showsChapters ? "sidebar.left" : "list.bullet")
+        if current.content.chapter.provider != .comix {
+            ToolbarItem(placement: .bottomBar) {
+                Button {
+                    setChaptersVisible(!showsChapters)
+                    ShelfHaptics.selection.play()
+                } label: {
+                    Image(systemName: showsChapters ? "sidebar.left" : "list.bullet")
+                }
+                .tint(Color.primary)
+                .accessibilityLabel(showsChapters ? "Hide chapters" : "Show chapters")
+                .accessibilityIdentifier("reader-chapters")
             }
-            .tint(Color.primary)
-            .accessibilityLabel(showsChapters ? "Hide chapters" : "Show chapters")
-            .accessibilityIdentifier("reader-chapters")
         }
         ToolbarItem(placement: .bottomBar) {
             readerMenu(current.content)
@@ -411,7 +438,7 @@ struct ReaderScreen: View {
 
     private func positionMenu(_ book: ReadingBook, segment: ReadingBook.Segment, current: [Int]) -> some View {
         let content = segment.content
-        let total = content.pages.count
+        let total = content.pageCount
         let first = current[0] - segment.start + 1
         let label = current.count == 1 ? String(first) : "\(first)–\(first + 1)"
         let read = library.progress(content.chapter).read
@@ -502,12 +529,13 @@ private struct ReadingBook {
     struct Segment {
         let content: ChapterContent
         let start: Int
-        var end: Int { start + content.pages.count }
+        var end: Int { start + content.pageCount }
     }
 
     struct Page {
         let chapter: Chapter
-        let url: URL
+        let url: URL?
+        let deferredPages: DeferredChapterPages?
         let number: Int
         let isLast: Bool
     }
@@ -520,8 +548,14 @@ private struct ReadingBook {
         var pages: [Page] = []
         for content in chapters {
             segments.append(Segment(content: content, start: pages.count))
-            for (index, url) in content.pages(for: quality).enumerated() {
-                pages.append(Page(chapter: content.chapter, url: url, number: index, isLast: index == content.pages.count - 1))
+            let urls: [URL?] = if let deferred = content.deferredPages {
+                Array(repeating: nil, count: deferred.count)
+            } else {
+                content.pages(for: quality).map(Optional.some)
+            }
+            for (index, url) in urls.enumerated() {
+                pages.append(Page(chapter: content.chapter, url: url, deferredPages: content.deferredPages,
+                                  number: index, isLast: index == content.pageCount - 1))
             }
         }
         self.segments = segments
@@ -571,7 +605,7 @@ private struct ContinuousPages: View {
                                     .padding(14)
                                     .accessibilityAddTraits(.isHeader)
                             }
-                            PageArtwork(chapter: entry.chapter, url: entry.url, page: entry.number,
+                            PageArtwork(chapter: entry.chapter, url: entry.url, deferredPages: entry.deferredPages, page: entry.number,
                                         scrolling: true, quality: quality, active: abs(index - page) <= 1, didLoad: { _ in
                                             loaded.insert(index)
                                             didLoad(index)
@@ -739,7 +773,7 @@ private struct SpreadArt: View {
             HStack(spacing: 0) {
                 ForEach(indices, id: \.self) { index in
                     let entry = pages[index]
-                    PageArtwork(chapter: entry.chapter, url: entry.url, page: entry.number, scrolling: false, quality: quality,
+                    PageArtwork(chapter: entry.chapter, url: entry.url, deferredPages: entry.deferredPages, page: entry.number, scrolling: false, quality: quality,
                                 didLoad: { _ in didLoad(index) }, didReachEnd: { _ in didReachEnd(index) })
                         .frame(width: geometry.size.width / CGFloat(indices.count))
                 }

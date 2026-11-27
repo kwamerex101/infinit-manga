@@ -10,26 +10,50 @@ final class SourceWebPage: NSObject, WKNavigationDelegate {
     }
 
     private static let websiteDataStore = WKWebsiteDataStore.nonPersistent()
-    private let webView: WKWebView
+    let webView: WKWebView
     private let hosts: [String]
     private let documentScript: String
     private var continuation: CheckedContinuation<Document, Error>?
     private var timeout: Task<Void, Never>?
     private var checkingAccess = false
+    private let keepsPageOpen: Bool
+    private var finishedLoading = false
 
-    private init(hosts: [String], documentScript: String, keepsWebsiteSession: Bool) {
+    private init(hosts: [String], documentScript: String, keepsWebsiteSession: Bool,
+                 rules: WKContentRuleList? = nil) {
+        keepsPageOpen = rules != nil
         self.hosts = hosts
         self.documentScript = documentScript
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = keepsWebsiteSession ? .default() : Self.websiteDataStore
+        if let rules { configuration.userContentController.add(rules) }
+        if keepsPageOpen { configuration.preferences.javaScriptCanOpenWindowsAutomatically = false }
         webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 640), configuration: configuration)
         super.init()
+        if keepsPageOpen {
+            webView.isUserInteractionEnabled = false
+            webView.accessibilityElementsHidden = true
+        }
         webView.navigationDelegate = self
     }
 
     static func load(_ url: URL, hosts: [String], keepsWebsiteSession: Bool = false,
                      documentScript: String = "return document.documentElement.outerHTML") async throws -> Document {
         try await SourceWebPage(hosts: hosts, documentScript: documentScript, keepsWebsiteSession: keepsWebsiteSession).load(url)
+    }
+
+    static func openComixChapter(_ url: URL, documentScript: String) async throws -> (SourceWebPage, Document) {
+        let rules = try await InAppWebsiteRules.load(for: .comix)
+        let page = SourceWebPage(hosts: ReadingSource.comix.hosts, documentScript: documentScript,
+                                 keepsWebsiteSession: false, rules: rules)
+        return (page, try await page.load(url))
+    }
+
+    func evaluate(_ script: String, arguments: [String: Any] = [:]) async throws -> String {
+        guard let value = try await webView.callAsyncJavaScript(
+            script, arguments: arguments, in: nil, contentWorld: .defaultClient
+        ) as? String else { throw SourceFailure.unavailable }
+        return value
     }
 
     static func brainRotImage(_ url: URL) async throws -> Data {
@@ -83,13 +107,18 @@ final class SourceWebPage: NSObject, WKNavigationDelegate {
         guard let continuation else { return }
         self.continuation = nil
         timeout?.cancel()
-        webView.navigationDelegate = nil
-        webView.stopLoading()
+        if keepsPageOpen, case .success = result {
+            finishedLoading = true
+        } else {
+            webView.navigationDelegate = nil
+            webView.stopLoading()
+        }
         continuation.resume(with: result)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let target = action.targetFrame else { return .cancel }
+        if keepsPageOpen && (!target.isMainFrame || finishedLoading) { return .cancel }
         if !target.isMainFrame || allows(action.request.url) { return .allow }
         finish(.failure(SourceFailure.restricted))
         return .cancel
@@ -120,10 +149,8 @@ final class SourceWebPage: NSObject, WKNavigationDelegate {
         }
         Task {
             do {
-                guard let html = try await webView.callAsyncJavaScript(
-                    documentScript,
-                    arguments: [:], in: nil, contentWorld: .defaultClient
-                ) as? String, webView.url == url else { throw SourceFailure.unavailable }
+                let html = try await evaluate(documentScript)
+                guard webView.url == url else { throw SourceFailure.unavailable }
                 finish(.success(Document(url: url, html: html)))
             } catch {
                 finish(.failure(error))
