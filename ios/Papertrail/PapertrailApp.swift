@@ -115,10 +115,12 @@ struct ShelfView: View {
     @FocusState private var searchFocused: Bool
 
     private var activeSources: [ReadingSource] {
-        let sources = library.enabledSources
+        let sources = library.catalogSources
         if let filter, sources.contains(filter) { return [filter] }
         return sources
     }
+
+    private var searchSources: [ReadingSource] { activeSources.filter { $0 != .comix } }
 
     private struct ComixPage: Identifiable {
         let url: URL
@@ -177,15 +179,15 @@ struct ShelfView: View {
                 if let chapter = chapterAlerts.takePendingChapter() { path.append(chapter) }
             }
             .onChange(of: query) { clearSearchResults() }
-            .onChange(of: activeSources) {
+            .onChange(of: searchSources) {
                 if tab == .search, !term.isEmpty {
                     submit()
                 } else {
                     clearSearchResults()
                 }
             }
-            .onChange(of: library.enabledSources) {
-                if let filter, !library.enabledSources.contains(filter) { self.filter = nil }
+            .onChange(of: library.catalogSources) {
+                if let filter, !library.catalogSources.contains(filter) { self.filter = nil }
             }
             .onChange(of: scenePhase) {
                 if scenePhase == .active { reload += 1 }
@@ -305,7 +307,7 @@ struct ShelfView: View {
                     .modifier(ShelfSurface())
                     .accessibilityIdentifier("manga-browse-comix")
                 }
-                if !library.hasComix || !library.enabledSources.isEmpty { updates }
+                updates
             }
             .padding(.horizontal, 18)
             .padding(.top, 15)
@@ -317,7 +319,7 @@ struct ShelfView: View {
     }
 
     private var sourceFilters: some View {
-        ShelfSourceFilters(sources: library.enabledSources, selection: $filter, name: \.name)
+        ShelfSourceFilters(sources: library.catalogSources, selection: $filter, name: \.name)
     }
 
     private var updates: some View {
@@ -326,14 +328,24 @@ struct ShelfView: View {
         let failure = SourceLoadFailure.combined(sources.compactMap { feedFailures[$0] })
         let hasCatalog = sources.contains { catalogs[$0] != nil }
         return VStack(alignment: .leading, spacing: 6) {
-            ShelfHeading("Latest updates")
-            if library.enabledSources.count > 1 { sourceFilters }
-            if library.enabledSources.isEmpty {
+            HStack {
+                ShelfHeading("Latest updates")
+                Spacer()
+                if !library.catalogSources.isEmpty {
+                    Button("Manage sources", systemImage: "plus.circle") { tab = .settings }
+                        .labelStyle(.iconOnly)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityIdentifier("manga-manage-sources")
+                }
+            }
+            if !library.catalogSources.isEmpty { sourceFilters }
+            if library.catalogSources.isEmpty {
                 ShelfStateView("No streaming sources",
                                message: "Add a source to see new chapters.",
                                style: .compact, action: .init("Manage sources") { tab = .settings })
             } else if !items.isEmpty {
-                MangaGrid(items: items, showSource: true, loadMore: { await loadMoreUpdates() })
+                MangaGrid(items: items, showSource: true, loadMore: { await loadMoreUpdates() },
+                          openComix: { comixPage = ComixPage(url: $0) })
                 moreUpdatesFooter
                 if !loadingUpdates, let failure {
                     ShelfStateView(failure: failure, title: "Some updates couldn’t refresh",
@@ -373,9 +385,9 @@ struct ShelfView: View {
     }
 
     private var searchPage: some View {
-        let results = activeSources.flatMap { searchResults?[$0] ?? [] }
+        let results = searchSources.flatMap { searchResults?[$0] ?? [] }
         return ShelfSearchPage(mode: "manga", cancel: cancelSearch) {
-            if library.enabledSources.count > 1 { sourceFilters }
+            if library.catalogSources.count > 1 { sourceFilters }
         } results: {
             VStack(alignment: .leading, spacing: 13) {
                 if !results.isEmpty {
@@ -658,7 +670,7 @@ struct ShelfView: View {
             if feedback { ShelfHaptics.error.play() }
             return
         }
-        let sources = activeSources
+        let sources = searchSources
         guard !sources.isEmpty else {
             clearSearchResults()
             searchIssue = .missingSources
@@ -694,7 +706,7 @@ struct ShelfView: View {
                 }
                 return (matches, failures)
             }
-            guard !Task.isCancelled, term == self.term, sources == activeSources else { return }
+            guard !Task.isCancelled, term == self.term, sources == searchSources else { return }
             searching = false
             searchResults = matches
             if let failure = SourceLoadFailure.combined(failures) {
@@ -712,29 +724,35 @@ struct MangaGrid: View {
     var showSource = false
     var titleStates: [String: SavedChapterUpdates.TitleState] = [:]
     var loadMore: (() async -> Void)? = nil
+    var openComix: ((URL) -> Void)? = nil
 
     var body: some View {
         LazyVGrid(columns: mangaGridColumns, alignment: .leading, spacing: 17) {
             ForEach(items) { manga in
                 let status = titleStates[manga.id]
                 VStack(alignment: .leading, spacing: 5) {
-                    NavigationLink(value: manga) {
-                        VStack(alignment: .leading, spacing: 7) {
-                            CoverView(url: manga.cover, mangaID: manga.id)
-                                .aspectRatio(0.72, contentMode: .fit)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8).strokeBorder(Color.papertrailStroke)
-                                        .allowsHitTesting(false)
-                                }
-                                .allowsHitTesting(false)
-                                .accessibilityHidden(true)
-                            Text(manga.title)
-                                .font(.subheadline.weight(titleWeight(status)))
-                                .foregroundStyle(status == .caughtUp ? Color.secondary : Color.primary)
-                                .lineLimit(2, reservesSpace: true)
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                    let label = VStack(alignment: .leading, spacing: 7) {
+                        CoverView(url: manga.cover, mangaID: manga.id)
+                            .aspectRatio(0.72, contentMode: .fit)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8).strokeBorder(Color.papertrailStroke)
+                                    .allowsHitTesting(false)
+                            }
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        Text(manga.title)
+                            .font(.subheadline.weight(titleWeight(status)))
+                            .foregroundStyle(status == .caughtUp ? Color.secondary : Color.primary)
+                            .lineLimit(2, reservesSpace: true)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .contentShape(Rectangle())
+                    Group {
+                        if manga.provider == .comix, let openComix {
+                            Button { openComix(manga.source) } label: { label }
+                        } else {
+                            NavigationLink(value: manga) { label }
                         }
-                        .contentShape(Rectangle())
                     }
                     .buttonStyle(ShelfPressStyle())
                     .accessibilityValue(titleAccessibilityValue(status))
@@ -750,12 +768,14 @@ struct MangaGrid: View {
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
                 .overlay(alignment: .topLeading) {
-                    MangaSaveButton(manga: manga, kind: .readLater)
-                        .padding(1)
+                    if manga.provider != .comix {
+                        MangaSaveButton(manga: manga, kind: .readLater).padding(1)
+                    }
                 }
                 .overlay(alignment: .topTrailing) {
-                    MangaSaveButton(manga: manga)
-                        .padding(1)
+                    if manga.provider != .comix {
+                        MangaSaveButton(manga: manga).padding(1)
+                    }
                 }
                 .transition(.opacity)
                 .task(id: manga.id == items.last?.id) {

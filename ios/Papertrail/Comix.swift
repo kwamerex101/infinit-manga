@@ -1,6 +1,79 @@
 import Foundation
+import SwiftSoup
 
 enum Comix {
+    static func catalog() async throws -> Catalog {
+        let home = InAppWebsite.comixURL
+        let bytes = try await SourceHTTP.data(home, allowedHosts: ReadingSource.comix.hosts)
+        let document = try SwiftSoup.parse(String(decoding: bytes, as: UTF8.self))
+        guard let payload = try document.select("script#initial-data").first()?.data() else {
+            throw SourceFailure.unavailable
+        }
+        return try decodeCatalog(payload, relativeTo: home)
+    }
+
+    private static func decodeCatalog(_ payload: String, relativeTo home: URL) throws -> Catalog {
+        let homepage = try JSONDecoder().decode(Homepage.self, from: Data(payload.utf8))
+        guard homepage.page == "home",
+              let updates = homepage.updates else {
+            throw SourceFailure.unavailable
+        }
+        let latest = updates.items.compactMap { item -> Manga? in
+            guard let url = SourceHTTP.url(item.url, relativeTo: home),
+                  let slug = seriesSlug(url) else { return nil }
+            let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return nil }
+            let cover = [item.poster?.medium, item.poster?.large].compactMap { path -> URL? in
+                guard let path, let url = SourceHTTP.url(path, relativeTo: home),
+                      InAppWebsite.comix.contains(url), url.path.hasPrefix("/images/covers/") else { return nil }
+                return url
+            }.first
+            return Manga(slug: slug, title: title, cover: cover, sourceID: .comix)
+        }
+        return Catalog(featured: [], latest: latest)
+    }
+
+    private struct Homepage: Decodable {
+        let page: String
+        let updates: Updates?
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            page = try container.decode(String.self, forKey: .page)
+            let entries = try container.nestedContainer(keyedBy: QueryKey.self, forKey: .queries)
+            let key = entries.allKeys.first {
+                $0.stringValue.hasPrefix(#"["manga","list","#)
+                    && $0.stringValue.contains(#""chapter_updated_at":"desc""#)
+            }
+            updates = try key.map { try entries.decode(Updates.self, forKey: $0) }
+        }
+
+        private enum CodingKeys: String, CodingKey { case page, queries }
+    }
+
+    private struct QueryKey: CodingKey {
+        let stringValue: String
+        let intValue: Int? = nil
+
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+    }
+
+    private struct Updates: Decodable {
+        struct Item: Decodable {
+            struct Poster: Decodable {
+                let medium: String?
+                let large: String?
+            }
+
+            let url: String
+            let title: String
+            let poster: Poster?
+        }
+
+        let items: [Item]
+    }
+
     static func seriesURL(_ slug: String) -> URL {
         InAppWebsite.comixURL.appending(component: "title").appending(component: slug)
     }

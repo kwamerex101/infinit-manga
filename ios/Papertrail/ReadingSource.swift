@@ -135,7 +135,7 @@ enum ReadingSource: String, Codable, CaseIterable, Identifiable, Sendable {
             case .manhuaPlus, .vortexScans, .brainRotComics: try await mangaWebsite.catalog(page: page)
             case .dynastyReader: try await DynastyReader.catalog(page: page)
             case .mangapill: try await Mangapill.catalog()
-            case .comix: throw SourceFailure.unavailable
+            case .comix: try await Comix.catalog()
             }
         }
     }
