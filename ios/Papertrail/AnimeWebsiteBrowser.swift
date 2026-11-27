@@ -461,10 +461,10 @@ private enum InAppWebsiteRules {
     }
 
     static func load(for website: InAppWebsite) async throws -> WKContentRuleList {
-        let version = switch website.animeWebsite {
-        case .flixMovie: 2
-        case .aniZone: 3
-        case nil: 1
+        let version = switch website {
+        case .anime(.flixMovie), .comix: 2
+        case .anime(.aniZone): 3
+        case .xoxoComics: 1
         }
         let identifier = "Infinit.\(website.name).AdRules.v\(version)"
         guard let store = WKContentRuleListStore.default() else { throw SourceFailure.unavailable }
@@ -496,6 +496,18 @@ private enum InAppWebsiteRules {
             rules.append([
                 "trigger": ["url-filter": "^https?://", "load-type": ["third-party"]],
                 "action": ["type": "block"],
+            ])
+        }
+        if case .comix = website {
+            // Comix distributes chapter images across changing CDN domains.
+            rules.append([
+                "trigger": [
+                    "url-filter": "^https://",
+                    "resource-type": ["image"],
+                    "load-type": ["third-party"],
+                    "if-top-url": [#"^https://(www\.)?comix\.to/title/[a-z0-9-]+/[0-9]+-chapter-"#],
+                ],
+                "action": ["type": "ignore-previous-rules"],
             ])
         }
         let data = try JSONSerialization.data(withJSONObject: rules)
