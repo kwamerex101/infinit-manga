@@ -204,6 +204,7 @@ final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDele
 
     private let website: InAppWebsite
     private let focusedPlayback: Bool
+    @ObservationIgnored private var urlObservation: NSKeyValueObservation?
 
     init(site: InAppWebsite, focusedPlayback: Bool = false) {
         website = site
@@ -254,6 +255,15 @@ final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDele
                 view.scrollView.isScrollEnabled = false
             }
             webView = view
+            if case .comix = website {
+                urlObservation = view.observe(\.url, options: [.new]) { [weak self] view, _ in
+                    Task { @MainActor [weak self, weak view] in
+                        guard let self, let view, webView === view else { return }
+                        currentURL = view.url
+                        canGoBack = view.canGoBack
+                    }
+                }
+            }
             view.load(URLRequest(url: url, timeoutInterval: 30))
             if focusedPlayback { try await waitForPlayer(in: view) }
         } catch {
@@ -371,6 +381,8 @@ final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDele
     """#
 
     func close() {
+        urlObservation?.invalidate()
+        urlObservation = nil
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
         webView?.stopLoading()
