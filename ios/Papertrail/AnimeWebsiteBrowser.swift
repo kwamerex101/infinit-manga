@@ -49,19 +49,42 @@ struct AnimeWebsiteBrowserButton<Content: View>: View {
 enum InAppWebsite {
     case anime(AnimeWebsite)
     case xoxoComics
+    case comix
+
+    static let comixURL = URL(string: "https://comix.to/")!
 
     var animeWebsite: AnimeWebsite? {
         if case let .anime(website) = self { return website }
         return nil
     }
 
-    var host: String { animeWebsite?.host ?? "xoxocomic.com" }
-    var name: String { animeWebsite?.name ?? "XOXO Comics" }
-    var browserID: String { animeWebsite?.browserID ?? "xoxo-browser" }
+    var host: String {
+        switch self {
+        case .anime(let website): website.host
+        case .xoxoComics: "xoxocomic.com"
+        case .comix: "comix.to"
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .anime(let website): website.name
+        case .xoxoComics: "XOXO Comics"
+        case .comix: "Comix"
+        }
+    }
+
+    var browserID: String {
+        switch self {
+        case .anime(let website): website.browserID
+        case .xoxoComics: "xoxo-browser"
+        case .comix: "comix-browser"
+        }
+    }
 
     func contains(_ url: URL?) -> Bool {
         if let animeWebsite { return animeWebsite.contains(url) }
-        guard let url, url.scheme == "https", let host = url.host,
+        guard let url, url.scheme == "https", let host = url.host?.lowercased(),
               url.port == nil || url.port == 443, url.user == nil, url.password == nil else { return false }
         return host == self.host || host == "www." + self.host
     }
@@ -350,7 +373,8 @@ final class InAppWebsiteBrowserSession: NSObject, WKNavigationDelegate, WKUIDele
     func webView(_ view: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = action.request.url, !action.shouldPerformDownload else { return .cancel }
         if action.targetFrame == nil {
-            if website.animeWebsite != nil, action.sourceFrame.isMainFrame,
+            if website.animeWebsite != nil || website.host == InAppWebsite.comix.host,
+               action.sourceFrame.isMainFrame,
                action.navigationType == .linkActivated, website.contains(url) {
                 view.load(action.request)
             }

@@ -26,6 +26,7 @@ struct SourceSettings: View {
     @AppStorage("reading-layout") private var layout = ReadingLayout.automatic
     @AppStorage("reading-direction") private var direction = ReadingDirection.rightToLeft
     @State private var showingSourcePicker = false
+    @State private var showingComix = false
     @State private var message: String?
     @State private var wide = false
     @State private var expandedSections: Set<SettingsSection> = [.appearance]
@@ -72,11 +73,14 @@ struct SourceSettings: View {
         .onDisappear { expandedSections = [.appearance] }
         .shelfEntrance()
         .sheet(isPresented: $showingSourcePicker) {
-            SourcePicker(added: Set(library.sourceURLs.compactMap(ReadingSource.match))) { source in
+            SourcePicker(added: Set(library.enabledSources), comixAdded: library.hasComix) { source in
                 add(source)
                 showingSourcePicker = false
             }
             .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(isPresented: $showingComix) {
+            InAppWebsiteBrowser(site: .comix, url: InAppWebsite.comixURL)
         }
         .alert("Remove this source?", isPresented: Binding(
             get: { sourceToRemove != nil },
@@ -375,22 +379,31 @@ struct SourceSettings: View {
 
     private func siteRow(_ website: URL) -> some View {
         let provider = ReadingSource.match(website)
-        let title = provider?.name ?? "Website link"
+        let isComix = InAppWebsite.comix.contains(website)
+        let title = isComix ? InAppWebsite.comix.name : provider?.name ?? "Website link"
+        let label = HStack(spacing: 10) {
+            SourceLogo(source: provider)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                Text(website.absoluteString)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         return HStack(spacing: 8) {
-            Link(destination: website) {
-                HStack(spacing: 10) {
-                    SourceLogo(source: provider)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                        Text(website.absoluteString)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    Spacer(minLength: 0)
+            Group {
+                if isComix {
+                    Button {
+                        ShelfHaptics.tap.play()
+                        showingComix = true
+                    } label: { label }
+                } else {
+                    Link(destination: website) { label }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
             .buttonStyle(ShelfPressStyle())
 
@@ -405,15 +418,19 @@ struct SourceSettings: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Remove \(provider?.name ?? website.absoluteString)")
+            .accessibilityLabel("Remove \(isComix ? title : provider?.name ?? website.absoluteString)")
         }
         .padding(.leading, 12)
         .padding(.trailing, 6)
         .padding(.vertical, 5)
     }
 
-    private func add(_ source: ReadingSource) {
-        switch library.addSource(source) {
+    private func add(_ source: SourcePicker.Option) {
+        let result = switch source {
+        case .native(let provider): library.addSource(provider)
+        case .comix: library.addComixSource()
+        }
+        switch result {
         case .added:
             message = nil
             ShelfHaptics.success.play()
@@ -445,17 +462,37 @@ private struct SourceLogo: View {
     }
 }
 
-struct SourcePicker: View {
+private struct SourcePicker: View {
+    enum Option: Hashable, Identifiable {
+        case native(ReadingSource)
+        case comix
+
+        var id: String { provider?.rawValue ?? "comix" }
+        var name: String { provider?.name ?? InAppWebsite.comix.name }
+        var homepage: URL { provider?.homepage ?? InAppWebsite.comixURL }
+
+        var provider: ReadingSource? {
+            if case .native(let source) = self { return source }
+            return nil
+        }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     let added: Set<ReadingSource>
-    let select: (ReadingSource) -> Void
+    let comixAdded: Bool
+    let select: (Option) -> Void
 
-    private var suggestions: [ReadingSource] {
+    private func isAdded(_ source: Option) -> Bool {
+        source.provider.map { added.contains($0) } ?? comixAdded
+    }
+
+    private var suggestions: [Option] {
+        let options = ReadingSource.allCases.map(Option.native) + [.comix]
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !search.isEmpty else { return ReadingSource.allCases }
+        guard !search.isEmpty else { return options }
         let key = search.filter { $0.isLetter || $0.isNumber }
-        return ReadingSource.allCases.filter { source in
+        return options.filter { source in
             let name = source.name.filter { $0.isLetter || $0.isNumber }
             return source.name.localizedCaseInsensitiveContains(search)
                 || source.homepage.absoluteString.localizedCaseInsensitiveContains(search)
@@ -476,7 +513,7 @@ struct SourcePicker: View {
                         .submitLabel(.search)
                         .accessibilityIdentifier("source-picker-search")
                         .onSubmit {
-                            if suggestions.count == 1, let source = suggestions.first, !added.contains(source) {
+                            if suggestions.count == 1, let source = suggestions.first, !isAdded(source) {
                                 select(source)
                             }
                         }
@@ -496,13 +533,20 @@ struct SourcePicker: View {
                     ContentUnavailableView.search(text: query)
                 } else {
                     List(suggestions) { source in
-                        let isAdded = added.contains(source)
+                        let isAdded = isAdded(source)
                         Button {
                             select(source)
                         } label: {
                             HStack(spacing: 10) {
-                                SourceLogo(source: source)
-                                Text(source.name).font(.body.weight(.semibold))
+                                SourceLogo(source: source.provider)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(source.name).font(.body.weight(.semibold))
+                                    if source == .comix {
+                                        Text("Opens in the in-app browser")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
                                 Spacer()
                                 if isAdded {
                                     Text("Added").font(.caption).foregroundStyle(.secondary)
@@ -515,7 +559,7 @@ struct SourcePicker: View {
                             .contentShape(Rectangle())
                         }
                         .disabled(isAdded)
-                        .accessibilityIdentifier("source-option-\(source.rawValue)")
+                        .accessibilityIdentifier("source-option-\(source.id)")
                     }
                     .listStyle(.insetGrouped)
                     .scrollDismissesKeyboard(.interactively)
