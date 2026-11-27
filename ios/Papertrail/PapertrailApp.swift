@@ -99,6 +99,7 @@ struct ShelfView: View {
     @State private var loadingMoreUpdates = false
     @State private var pageFailures: [ReadingSource: SourceLoadFailure] = [:]
     @State private var filter: ReadingSource?
+    @State private var comixPage: ComixPage?
     @State private var librarySection = LibrarySection.saved
     @State private var savedUpdates = SavedChapterUpdates()
     @State private var loadingUpdates = false
@@ -116,6 +117,11 @@ struct ShelfView: View {
         let sources = library.enabledSources
         if let filter, sources.contains(filter) { return [filter] }
         return sources
+    }
+
+    private struct ComixPage: Identifiable {
+        let url: URL
+        var id: URL { url }
     }
 
     private enum LibrarySection: String, CaseIterable {
@@ -152,6 +158,9 @@ struct ShelfView: View {
         NavigationStack(path: $path) {
             appShell
             .toolbar(.hidden, for: .navigationBar)
+            .fullScreenCover(item: $comixPage) { page in
+                InAppWebsiteBrowser(site: .comix, url: page.url)
+            }
             .onChange(of: tab) { previous, current in
                 if current == .search {
                     tabBeforeSearch = previous
@@ -270,7 +279,27 @@ struct ShelfView: View {
             VStack(alignment: .leading, spacing: 21) {
                 MediaModeMenu(mode: $mode)
                 RecentShelf(showEmpty: true)
-                updates
+                if library.hasComix {
+                    Button {
+                        ShelfHaptics.tap.play()
+                        comixPage = ComixPage(url: InAppWebsite.comixURL)
+                    } label: {
+                        HStack(spacing: 10) {
+                            ShelfIcon(name: "globe")
+                            Text("Browse Comix").font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(12)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(ShelfPressStyle())
+                    .modifier(ShelfSurface())
+                    .accessibilityIdentifier("manga-browse-comix")
+                }
+                if !library.hasComix || !library.enabledSources.isEmpty { updates }
             }
             .padding(.horizontal, 18)
             .padding(.top, 15)
@@ -377,6 +406,10 @@ struct ShelfView: View {
             ShelfStateView("Unsupported website",
                            message: "Paste a series or chapter link from a supported source.",
                            action: editSearch)
+        case .missingSources where library.hasComix:
+            ShelfStateView("Search on Comix",
+                           message: "Open Comix to search its catalog.",
+                           action: .init("Open Comix") { comixPage = ComixPage(url: InAppWebsite.comixURL) })
         case .missingSources:
             ShelfStateView("No streaming sources",
                            message: "Add a source to search by title.",
@@ -582,6 +615,13 @@ struct ShelfView: View {
         let term = self.term
         guard !term.isEmpty else { return }
         searchFocused = false
+        if let url = SourceHTTP.url(term), InAppWebsite.comix.contains(url) {
+            clearSearchResults()
+            query = ""
+            comixPage = ComixPage(url: url)
+            if feedback { ShelfHaptics.tap.play() }
+            return
+        }
         if let url = SourceHTTP.url(term), let provider = ReadingSource.match(url) {
             clearSearchResults()
             // Canonicalize aliases so older RoliaScan link parsing can use its primary host.

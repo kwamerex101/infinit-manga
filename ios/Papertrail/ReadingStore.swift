@@ -147,12 +147,21 @@ final class ReadingStore {
         return ReadingSource.allCases.filter { addedSources.contains($0) }
     }
 
+    var hasComix: Bool { sourceURLs.contains { InAppWebsite.comix.contains($0) } }
+
+    func addComixSource() -> SourceAddition {
+        addSourceURL(InAppWebsite.comixURL, alreadyAdded: hasComix)
+    }
+
     @discardableResult
     func addSource(_ source: ReadingSource) -> SourceAddition {
+        addSourceURL(source.homepage, alreadyAdded: enabledSources.contains(source))
+    }
+
+    private func addSourceURL(_ url: URL, alreadyAdded: Bool) -> SourceAddition {
+        guard !alreadyAdded else { return .alreadyAdded }
         let previous = state.sourceURLs
-        let sources = sourceURLs
-        guard !sources.contains(where: { ReadingSource.match($0) == source }) else { return .alreadyAdded }
-        state.sourceURLs = sources + [source.homepage]
+        state.sourceURLs = sourceURLs + [url]
         save()
         if saveError {
             state.sourceURLs = previous
